@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Agent Network Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg:#0a0e1a; --panel:#111827; --border:#1e293b; --text:#e2e8f0; --muted:#64748b; --accent:#3b82f6; }
+  body { background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+  header { display:flex; align-items:center; gap:12px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--border); flex-shrink:0; }
+  header h1 { font-size:.95rem; font-weight:600; }
+  .badge { font-size:.7rem; padding:2px 8px; border-radius:999px; background:#1e3a5f; color:#60a5fa; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#10b981; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+  .hdr-stats { margin-left:auto; display:flex; gap:18px; font-size:.75rem; color:var(--muted); }
+  .hdr-stats span b { color:var(--text); }
+
+  .main { display:flex; flex:1; overflow:hidden; }
+  #graph { flex:1; position:relative; }
+  svg { width:100%; height:100%; }
+
+  .link { stroke:#334155; stroke-opacity:.5; stroke-width:1.5; }
+  .link.flash { stroke-opacity:1; stroke-width:3; stroke-dasharray:8; animation:dash .7s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset:-16; } }
+
+  .node circle { stroke-width:2.5; cursor:pointer; }
+  .node text.icon { text-anchor:middle; dominant-baseline:central; pointer-events:none; }
+  .node text.lbl { text-anchor:middle; fill:var(--muted); font-size:9px; pointer-events:none; }
+
+  .sidebar { width:290px; background:var(--panel); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+  .sec-title { padding:9px 14px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); border-bottom:1px solid var(--border); }
+  #agent-list { overflow-y:auto; max-height:50vh; }
+  .ai { display:flex; align-items:center; gap:9px; padding:7px 13px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .12s; }
+  .ai:hover { background:rgba(59,130,246,.07); }
+  .ai.sel { background:rgba(59,130,246,.14); }
+  .ai-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .ai-info { flex:1; min-width:0; }
+  .ai-name { font-size:.78rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ai-task { font-size:.68rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sb { font-size:.63rem; padding:1px 5px; border-radius:4px; flex-shrink:0; }
+  .s-idle{background:#1e293b;color:#64748b} .s-thinking{background:#1e3a5f;color:#60a5fa}
+  .s-working{background:#14532d;color:#4ade80} .s-communicating{background:#451a03;color:#fb923c}
+  .s-done{background:#1a2e05;color:#a3e635}
+
+  .log-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  #msg-log { overflow-y:auto; flex:1; }
+  .mi { padding:5px 13px; font-size:.7rem; border-bottom:1px solid rgba(30,41,59,.4); }
+  .mi .from { color:var(--accent); font-weight:600; }
+  .mi .arr { color:var(--muted); margin:0 3px; }
+  .mi .to { color:#a78bfa; font-weight:600; }
+  .mi .txt { color:var(--muted); margin-top:1px; }
+  .mi.new { animation:flash .5s ease-out; }
+  @keyframes flash { from{background:rgba(59,130,246,.18)} to{background:transparent} }
+
+  #tip { position:absolute; background:#1e293b; border:1px solid var(--border); border-radius:8px; padding:9px 13px; font-size:.76rem; pointer-events:none; opacity:0; transition:opacity .12s; z-index:9; min-width:170px; }
+  #conn-count { font-size:.68rem; color:var(--accent); margin-top:3px; }
+
+  #err { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#7f1d1d; color:#fca5a5; padding:7px 18px; border-radius:8px; font-size:.8rem; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot"></div>
+  <h1>🤖 Agent Network Dashboard</h1>
+  <span class="badge" id="mode-badge">HTTP</span>
+  <div class="hdr-stats">
+    <span>Agenci: <b id="s-total">0</b></span>
+    <span>Aktywni: <b id="s-active">0</b></span>
+    <span>Tick: <b id="s-tick">0</b></span>
+  </div>
+</header>
+
+<div class="main">
+  <div id="graph">
+    <svg id="svg"></svg>
+    <div id="tip"></div>
+  </div>
+  <aside class="sidebar">
+    <div class="sec-title">Agenci</div>
+    <div id="agent-list"></div>
+    <div class="log-wrap">
+      <div class="sec-title">📡 Komunikacja</div>
+      <div id="msg-log"></div>
+    </div>
+  </aside>
+</div>
+<div id="err">Brak połączenia z serwerem…</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let nodes=[], links=[], agentTypes={}, lastMsgs=[], tick=0, selId=null;
+let sim, linkSel, nodeSel, svgG;
+let flashTimers={};
+
+const COLORS = {
+  orchestrator:'#f59e0b', planner:'#8b5cf6', coder:'#3b82f6',
+  reviewer:'#10b981', tester:'#06b6d4', researcher:'#f97316',
+  'security-architect':'#ef4444', 'memory-specialist':'#ec4899'
+};
+const ICONS = {
+  orchestrator:'👑', planner:'🗺️', coder:'💻', reviewer:'🔍',
+  tester:'🧪', researcher:'🔬', 'security-architect':'🛡️', 'memory-specialist':'🧠'
+};
+const TIERS = { orchestrator:0, planner:1 };
+function tier(t){ return TIERS[t]??2; }
+function radius(t){ return tier(t)===0?22:tier(t)===1?16:13; }
+function color(t){ return COLORS[t]||'#60a5fa'; }
+function icon(t){ return ICONS[t]||'🤖'; }
+
+// ── Fetch loop ─────────────────────────────────────────────────────────────────
+let prevMsgIds = new Set();
+
+async function fetchAndUpdate(){
+  try{
+    const r = await fetch('/api/agents');
+    if(!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    document.getElementById('err').style.display='none';
+
+    agentTypes = data.agentTypes||{};
+    const newMsgs = (data.messages||[]).filter(m=>!prevMsgIds.has(m.id));
+    newMsgs.forEach(m=>{
+      prevMsgIds.add(m.id);
+      flashLink(m.from, m.to);
+      prependLog(m, data.agents);
+    });
+    lastMsgs = data.messages||[];
+
+    if(!sim){
+      nodes = data.agents.map(a=>({...a}));
+      links = buildLinks(nodes);
+      initGraph();
+    } else {
+      // update existing nodes in-place so d3 keeps positions
+      data.agents.forEach(a=>{
+        const n=nodes.find(n=>n.id===a.id);
+        if(n){ Object.assign(n,{status:a.status,task:a.task}); }
+      });
+      updateVisuals();
+    }
+
+    tick++;
+    document.getElementById('s-total').textContent  = nodes.length;
+    document.getElementById('s-active').textContent = nodes.filter(n=>n.status!=='idle').length;
+    document.getElementById('s-tick').textContent   = tick;
+    renderList();
+  } catch(e){
+    document.getElementById('err').style.display='block';
+  }
+}
+
+function buildLinks(ns){
+  const out=[];
+  ns.forEach(n=>{
+    (n.connections||[]).forEach(tid=>{
+      const key=`${n.id}__${tid}`;
+      if(!out.find(l=>l.id===key)) out.push({id:key,source:n.id,target:tid});
+    });
+  });
+  return out;
+}
+
+// ── D3 ─────────────────────────────────────────────────────────────────────────
+function initGraph(){
+  const el=document.getElementById('svg');
+  el.innerHTML='';
+  const W=el.clientWidth, H=el.clientHeight;
+  const svg=d3.select('#svg');
+  svgG=svg.append('g');
+
+  // zoom
+  svg.call(d3.zoom().scaleExtent([.25,4]).on('zoom',e=>svgG.attr('transform',e.transform)));
+
+  // glow filter
+  const defs=svg.append('defs');
+  const f=defs.append('filter').attr('id','glow');
+  f.append('feGaussianBlur').attr('stdDeviation','3').attr('result','blur');
+  const fm=f.append('feMerge');
+  fm.append('feMergeNode').attr('in','blur');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
+
+  linkSel=svgG.append('g').selectAll('line')
+    .data(links,d=>d.id).enter().append('line').attr('class','link');
+
+  nodeSel=svgG.append('g').selectAll('g.node')
+    .data(nodes,d=>d.id).enter().append('g').attr('class','node')
+    .call(d3.drag()
+      .on('start',(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on('drag', (e,d)=>{d.fx=e.x;d.fy=e.y;})
+      .on('end',  (e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}))
+    .on('click',(_,d)=>selectNode(d.id))
+    .on('mouseover',(e,d)=>showTip(e,d))
+    .on('mousemove',(e)=>moveTip(e))
+    .on('mouseout',()=>hideTip());
+
+  nodeSel.append('circle')
+    .attr('r',d=>radius(d.type))
+    .attr('fill',d=>color(d.type)+'28')
+    .attr('stroke',d=>color(d.type))
+    .style('filter','url(#glow)');
+
+  nodeSel.append('text').attr('class','icon')
+    .attr('y',1).style('font-size',d=>tier(d.type)===0?'15px':'11px').text(d=>icon(d.type));
+
+  nodeSel.append('text').attr('class','lbl')
+    .attr('y',d=>radius(d.type)+11).text(d=>d.name);
+
+  sim=d3.forceSimulation(nodes)
+    .force('link',d3.forceLink(links).id(d=>d.id).distance(120))
+    .force('charge',d3.forceManyBody().strength(-350))
+    .force('center',d3.forceCenter(W/2,H/2))
+    .force('collide',d3.forceCollide(45))
+    .on('tick',()=>{
+      linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+             .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      nodeSel.attr('transform',d=>`translate(${d.x},${d.y})`);
+    });
+}
+
+function updateVisuals(){
+  if(!nodeSel) return;
+  nodeSel.select('circle')
+    .attr('stroke',d=>color(d.type))
+    .attr('fill',d=>color(d.type)+(selId===d.id?'44':'28'))
+    .attr('r',d=>radius(d.type)+(selId===d.id?5:0))
+    .attr('stroke-width',d=>selId===d.id?4:2.5);
+}
+
+// ── Flash ──────────────────────────────────────────────────────────────────────
+function flashLink(fromId, toId){
+  if(!linkSel) return;
+  const key=`${fromId}__${toId}`;
+  const rev=`${toId}__${fromId}`;
+  linkSel
+    .filter(d=>d.id===key||d.id===rev)
+    .classed('flash',true)
+    .attr('stroke',d=>color(nodes.find(n=>n.id===(d.source.id||d.source))?.type||''));
+  clearTimeout(flashTimers[key]);
+  flashTimers[key]=setTimeout(()=>{
+    if(linkSel) linkSel.filter(d=>d.id===key||d.id===rev).classed('flash',false).attr('stroke','#334155');
+  },1800);
+}
+
+// ── Tooltip ────────────────────────────────────────────────────────────────────
+const tip=document.getElementById('tip');
+function showTip(e,d){
+  const conns=(d.connections||[]).length;
+  tip.innerHTML=`<b>${icon(d.type)} ${d.name}</b><br>
+    <span style="color:${color(d.type)}">${d.type}</span> &bull;
+    <span class="sb s-${d.status}">${d.status}</span>
+    <div style="color:var(--muted);margin-top:4px">${d.task||'oczekuje...'}</div>
+    <div id="conn-count">Połączenia: ${conns}</div>`;
+  tip.style.opacity=1; moveTip(e);
+}
+function moveTip(e){
+  const r=document.getElementById('graph').getBoundingClientRect();
+  let x=e.clientX-r.left+14, y=e.clientY-r.top-10;
+  if(x+190>r.width) x-=200;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+}
+function hideTip(){ tip.style.opacity=0; }
+
+// ── Sidebar list ───────────────────────────────────────────────────────────────
+function renderList(){
+  document.getElementById('agent-list').innerHTML=nodes.map(n=>`
+    <div class="ai${n.id===selId?' sel':''}" onclick="selectNode('${n.id}')">
+      <div class="ai-dot" style="background:${color(n.type)}"></div>
+      <div class="ai-info">
+        <div class="ai-name">${icon(n.type)} ${n.name}</div>
+        <div class="ai-task">${n.task||'oczekuje...'}</div>
+      </div>
+      <span class="sb s-${n.status}">${n.status}</span>
+    </div>`).join('');
+}
+
+function selectNode(id){
+  selId=selId===id?null:id;
+  renderList();
+  updateVisuals();
+}
+
+// ── Log ────────────────────────────────────────────────────────────────────────
+function agentName(id,agents){ return (agents||nodes).find(n=>n.id===id)?.name||id; }
+
+function prependLog(m, agents){
+  const el=document.getElementById('msg-log');
+  const d=document.createElement('div');
+  d.className='mi new';
+  d.innerHTML=`<div><span class="from">${agentName(m.from,agents)}</span><span class="arr">→</span><span class="to">${agentName(m.to,agents)}</span></div><div class="txt">${m.text}</div>`;
+  el.prepend(d);
+  while(el.children.length>40) el.lastChild.remove();
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────────
+fetchAndUpdate();
+setInterval(fetchAndUpdate, 1500);
+</script>
+</body>
+</html>

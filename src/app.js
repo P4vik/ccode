@@ -3,6 +3,7 @@
 const express    = require('express');
 const logger     = require('./middleware/logger');
 const usersRoute = require('./routes/users');
+const store      = require('./agents/store');
 
 const app = express();
 
@@ -13,6 +14,9 @@ app.use(logger);
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use(express.static(require('path').join(__dirname, 'public')));
 app.use('/users', usersRoute);
+
+// ─── Agent API (HTTP fallback for dashboard) ──────────────────────────────────
+app.get('/api/agents', (req, res) => res.json(store.getSnapshot()));
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
