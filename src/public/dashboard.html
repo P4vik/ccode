@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Agent Network Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:    #0a0e1a;
+    --panel: #111827;
+    --border:#1e293b;
+    --text:  #e2e8f0;
+    --muted: #64748b;
+    --accent:#3b82f6;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Header ── */
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  header h1 { font-size: 1rem; font-weight: 600; letter-spacing: .05em; }
+  .badge { font-size: .7rem; padding: 2px 8px; border-radius: 999px; background: #1e3a5f; color: #60a5fa; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .stats { margin-left: auto; display: flex; gap: 20px; font-size: .75rem; color: var(--muted); }
+  .stats span b { color: var(--text); }
+
+  /* ── Main layout ── */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Graph ── */
+  #graph { flex: 1; position: relative; }
+  svg { width: 100%; height: 100%; }
+  .node circle { stroke-width: 2.5; cursor: pointer; transition: r .3s; }
+  .node:hover circle { r: 18; }
+  .node text { font-size: 10px; fill: var(--text); pointer-events: none; text-anchor: middle; dominant-baseline: central; }
+  .node .label { font-size: 9px; fill: var(--muted); }
+  .link { stroke-opacity: 0.4; stroke-width: 1.5; }
+  .link.active { stroke-opacity: 1; stroke-width: 3; stroke-dasharray: 8; animation: dash 0.8s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 300px; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-section { border-bottom: 1px solid var(--border); }
+  .sidebar-title { padding: 10px 14px; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+
+  /* Agent list */
+  #agent-list { overflow-y: auto; max-height: 52vh; }
+  .agent-item { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+  .agent-item:hover { background: rgba(59,130,246,.08); }
+  .agent-item.selected { background: rgba(59,130,246,.15); }
+  .agent-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .agent-info { flex: 1; min-width: 0; }
+  .agent-name { font-size: .8rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent-task { font-size: .7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status-badge { font-size: .65rem; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
+  .s-idle          { background:#1e293b; color:#64748b; }
+  .s-thinking      { background:#1e3a5f; color:#60a5fa; }
+  .s-working       { background:#14532d; color:#4ade80; }
+  .s-communicating { background:#451a03; color:#fb923c; }
+  .s-done          { background:#1a2e05; color:#a3e635; }
+
+  /* Message log */
+  #msg-log { overflow-y: auto; flex: 1; padding: 8px 0; }
+  .msg-item { padding: 5px 14px; font-size: .72rem; border-bottom: 1px solid rgba(30,41,59,.5); }
+  .msg-item .from { color: var(--accent); font-weight: 600; }
+  .msg-item .arrow { color: var(--muted); margin: 0 4px; }
+  .msg-item .to { color: #a78bfa; font-weight: 600; }
+  .msg-item .text { color: var(--muted); margin-top: 1px; }
+  .msg-item.new { animation: flash .4s ease-out; }
+  @keyframes flash { from { background: rgba(59,130,246,.2); } to { background: transparent; } }
+
+  /* Tooltip */
+  #tooltip { position: absolute; background: #1e293b; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: .78rem; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 10; min-width: 180px; }
+  #tooltip b { font-size: .85rem; }
+  #tooltip .tt-task { color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="status-dot"></div>
+  <h1>🤖 Agent Network Dashboard</h1>
+  <span class="badge">LIVE</span>
+  <div class="stats">
+    <span>Agenci: <b id="stat-total">0</b></span>
+    <span>Aktywni: <b id="stat-active">0</b></span>
+    <span>Wiadomości: <b id="stat-msgs">0</b></span>
+  </div>
+</header>
+
+<div class="main">
+  <div id="graph">
+    <svg id="svg"></svg>
+    <div id="tooltip"></div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">Agenci (kliknij aby zaznaczyć)</div>
+      <div id="agent-list"></div>
+    </div>
+    <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+      <div class="sidebar-title">📡 Log komunikacji</div>
+      <div id="msg-log"></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let nodes = [], links = [], agentTypes = {}, messages = [];
+let msgCount = 0, selectedId = null;
+let activeLinks = new Set();   // link ids currently flashing
+
+// ─── WebSocket ────────────────────────────────────────────────────────────────
+const wsUrl = `ws://${location.host}`;
+let ws;
+
+function connect() {
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    console.log('[WS] connected');
+    ws.send(JSON.stringify({ type: 'snapshot' }));
+  };
+
+  ws.onmessage = ({ data }) => {
+    const { type, payload } = JSON.parse(data);
+    if (type === 'snapshot') {
+      agentTypes = payload.agentTypes;
+      nodes = payload.agents.map(normalizeNode);
+      messages = payload.messages;
+      links = buildLinks(nodes);
+      init();
+      renderAgentList();
+      renderLog();
+    } else if (type === 'agent:update') {
+      const idx = nodes.findIndex(n => n.id === payload.id);
+      if (idx >= 0) { Object.assign(nodes[idx], normalizeNode(payload)); }
+      renderAgentList();
+      updateNodeVisuals();
+      updateStats();
+    } else if (type === 'message') {
+      messages.push(payload);
+      if (messages.length > 50) messages.shift();
+      msgCount++;
+      flashLink(payload.from, payload.to);
+      prependLog(payload);
+      document.getElementById('stat-msgs').textContent = msgCount;
+    }
+  };
+
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+
+function normalizeNode(a) {
+  return { ...a, ...agentTypes[a.type] };
+}
+
+function buildLinks(ns) {
+  const out = [];
+  ns.forEach(n => {
+    (n.connections || []).forEach(targetId => {
+      if (!out.find(l => (l.source === n.id || l.source?.id === n.id) && (l.target === targetId || l.target?.id === targetId))) {
+        out.push({ id: `${n.id}-${targetId}`, source: n.id, target: targetId });
+      }
+    });
+  });
+  return out;
+}
+
+// ─── D3 graph ─────────────────────────────────────────────────────────────────
+let simulation, linkSel, nodeSel, svg;
+
+function init() {
+  const el = document.getElementById('svg');
+  el.innerHTML = '';
+  const W = el.clientWidth, H = el.clientHeight;
+
+  svg = d3.select('#svg');
+  const g = svg.append('g');
+
+  // zoom
+  svg.call(d3.zoom().scaleExtent([0.3, 3]).on('zoom', e => g.attr('transform', e.transform)));
+
+  // defs glow
+  const defs = svg.append('defs');
+  const filter = defs.append('filter').attr('id', 'glow');
+  filter.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'coloredBlur');
+  const feMerge = filter.append('feMerge');
+  feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+  feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+  linkSel = g.append('g').selectAll('line')
+    .data(links, d => d.id).enter().append('line')
+    .attr('class', 'link')
+    .attr('stroke', '#334155');
+
+  nodeSel = g.append('g').selectAll('g.node')
+    .data(nodes, d => d.id).enter().append('g')
+    .attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',  (e, d) => { d.fx=e.x; d.fy=e.y; })
+      .on('end',   (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx=null; d.fy=null; }))
+    .on('click', (e, d) => selectAgent(d.id))
+    .on('mouseover', showTooltip)
+    .on('mousemove', moveTooltip)
+    .on('mouseout',  hideTooltip);
+
+  nodeSel.append('circle')
+    .attr('r', d => d.tier === 0 ? 22 : d.tier === 1 ? 16 : 13)
+    .attr('fill', d => d.color + '33')
+    .attr('stroke', d => d.color)
+    .style('filter', 'url(#glow)');
+
+  nodeSel.append('text').attr('y', 1).text(d => d.icon).style('font-size', d => d.tier===0?'16px':'12px');
+  nodeSel.append('text').attr('class','label').attr('y', d => d.tier===0?32:26).text(d => d.name);
+
+  simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(110))
+    .force('charge', d3.forceManyBody().strength(-300))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide(40))
+    .on('tick', ticked);
+
+  updateStats();
+}
+
+function ticked() {
+  linkSel.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+         .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+}
+
+function updateNodeVisuals() {
+  if (!nodeSel) return;
+  nodeSel.selectAll('circle')
+    .attr('stroke', d => { const n = nodes.find(n=>n.id===d.id); return n?.color || d.color; })
+    .attr('fill',   d => { const n = nodes.find(n=>n.id===d.id); return (n?.color||d.color)+'33'; });
+}
+
+function flashLink(fromId, toId) {
+  const key = `${fromId}-${toId}`;
+  activeLinks.add(key);
+  if (linkSel) {
+    linkSel.classed('active', d =>
+      activeLinks.has(`${d.source.id||d.source}-${d.target.id||d.target}`) ||
+      activeLinks.has(`${d.target.id||d.target}-${d.source.id||d.source}`)
+    ).attr('stroke', d => {
+      const src = d.source.id||d.source, tgt = d.target.id||d.target;
+      if (activeLinks.has(`${src}-${tgt}`) || activeLinks.has(`${tgt}-${src}`)) {
+        return nodes.find(n=>n.id===src)?.color || '#f59e0b';
+      }
+      return '#334155';
+    });
+  }
+  setTimeout(() => {
+    activeLinks.delete(key);
+    if (linkSel) {
+      linkSel.classed('active', d =>
+        activeLinks.has(`${d.source.id||d.source}-${d.target.id||d.target}`)
+      ).attr('stroke', d => {
+        const src = d.source.id||d.source, tgt = d.target.id||d.target;
+        return activeLinks.has(`${src}-${tgt}`) ? nodes.find(n=>n.id===src)?.color||'#f59e0b' : '#334155';
+      });
+    }
+  }, 1500);
+}
+
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+const tt = document.getElementById('tooltip');
+function showTooltip(e, d) {
+  const n = nodes.find(n=>n.id===d.id)||d;
+  tt.innerHTML = `<b>${n.icon} ${n.name}</b><br>
+    <span style="color:${n.color}">${n.type}</span> &bull;
+    <span class="status-badge s-${n.status}">${n.status}</span>
+    <div class="tt-task">${n.task||'—'}</div>`;
+  tt.style.opacity = 1;
+  moveTooltip(e);
+}
+function moveTooltip(e) {
+  const r = document.getElementById('graph').getBoundingClientRect();
+  let x = e.clientX - r.left + 12, y = e.clientY - r.top - 10;
+  if (x + 200 > r.width) x -= 210;
+  tt.style.left = x + 'px'; tt.style.top = y + 'px';
+}
+function hideTooltip() { tt.style.opacity = 0; }
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+function renderAgentList() {
+  const el = document.getElementById('agent-list');
+  el.innerHTML = nodes.map(n => `
+    <div class="agent-item${n.id===selectedId?' selected':''}" onclick="selectAgent('${n.id}')">
+      <div class="agent-dot" style="background:${n.color}"></div>
+      <div class="agent-info">
+        <div class="agent-name">${n.icon} ${n.name}</div>
+        <div class="agent-task">${n.task||'oczekuje...'}</div>
+      </div>
+      <span class="status-badge s-${n.status}">${n.status}</span>
+    </div>`).join('');
+}
+
+function selectAgent(id) {
+  selectedId = selectedId === id ? null : id;
+  renderAgentList();
+  if (nodeSel) {
+    nodeSel.selectAll('circle')
+      .attr('stroke-width', d => d.id === selectedId ? 4 : 2.5)
+      .attr('r', d => {
+        const base = d.tier===0?22:d.tier===1?16:13;
+        return d.id === selectedId ? base + 5 : base;
+      });
+  }
+}
+
+function renderLog() {
+  const el = document.getElementById('msg-log');
+  el.innerHTML = [...messages].reverse().map(msgHtml).join('');
+}
+
+function prependLog(msg) {
+  const el = document.getElementById('msg-log');
+  const div = document.createElement('div');
+  div.innerHTML = msgHtml(msg);
+  div.firstElementChild.classList.add('new');
+  el.prepend(div.firstElementChild);
+  while (el.children.length > 30) el.lastChild.remove();
+}
+
+function msgHtml(m) {
+  const from = nodes.find(n=>n.id===m.from);
+  const to   = nodes.find(n=>n.id===m.to);
+  return `<div class="msg-item">
+    <div><span class="from">${from?.name||m.from}</span><span class="arrow">→</span><span class="to">${to?.name||m.to}</span></div>
+    <div class="text">${m.text}</div>
+  </div>`;
+}
+
+function updateStats() {
+  document.getElementById('stat-total').textContent = nodes.length;
+  document.getElementById('stat-active').textContent = nodes.filter(n=>n.status!=='idle').length;
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>
