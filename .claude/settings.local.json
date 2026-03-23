@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(curl -s http://localhost:3000/users)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:3000/users -H \"Content-Type: application/json\" -d \"{\"\"name\"\": \"\"Piotr Zielony\"\", \"\"email\"\": \"\"piotr@example.com\"\"}\")",
+      "Bash(curl -s -X DELETE http://localhost:3000/users/1 -w \"\\\\nHTTP status: %{http_code}\")",
+      "Bash(curl -s http://localhost:3000/ -L)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3000\")",
+      "Bash(taskkill /PID 42856 /F)",
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "Bash(ollama list:*)",
+      "Bash(claude --version)",
+      "Bash(npx ruflo@latest doctor)",
+      "Bash(git init:*)"
+    ]
+  }
+}
