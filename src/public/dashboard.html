@@ -13,10 +13,13 @@
   header { display:flex; align-items:center; gap:12px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--border); flex-shrink:0; }
   header h1 { font-size:.95rem; font-weight:600; }
   .badge { font-size:.7rem; padding:2px 8px; border-radius:999px; background:#1e3a5f; color:#60a5fa; }
+  .badge.connected { background:#14532d; color:#4ade80; }
+  .badge.error { background:#7f1d1d; color:#fca5a5; }
   .dot { width:8px; height:8px; border-radius:50%; background:#10b981; animation:pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
   .hdr-stats { margin-left:auto; display:flex; gap:18px; font-size:.75rem; color:var(--muted); }
   .hdr-stats span b { color:var(--text); }
+  .hdr-stats .ruflo-count { color:#4ade80; }
 
   .main { display:flex; flex:1; overflow:hidden; }
   #graph { flex:1; position:relative; }
@@ -36,9 +39,11 @@
   .ai { display:flex; align-items:center; gap:9px; padding:7px 13px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .12s; }
   .ai:hover { background:rgba(59,130,246,.07); }
   .ai.sel { background:rgba(59,130,246,.14); }
+  .ai.real-agent { border-left:3px solid #4ade80; }
   .ai-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .ai-info { flex:1; min-width:0; }
   .ai-name { font-size:.78rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ai-name.real { color:#4ade80; }
   .ai-task { font-size:.68rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sb { font-size:.63rem; padding:1px 5px; border-radius:4px; flex-shrink:0; }
   .s-idle{background:#1e293b;color:#64748b} .s-thinking{background:#1e3a5f;color:#60a5fa}
@@ -57,6 +62,7 @@
 
   #tip { position:absolute; background:#1e293b; border:1px solid var(--border); border-radius:8px; padding:9px 13px; font-size:.76rem; pointer-events:none; opacity:0; transition:opacity .12s; z-index:9; min-width:170px; }
   #conn-count { font-size:.68rem; color:var(--accent); margin-top:3px; }
+  .real-tag { background:#14532d; color:#4ade80; font-size:.6rem; padding:1px 5px; border-radius:4px; margin-left:5px; }
 
   #err { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:#7f1d1d; color:#fca5a5; padding:7px 18px; border-radius:8px; font-size:.8rem; display:none; }
 </style>
@@ -65,11 +71,12 @@
 <header>
   <div class="dot"></div>
   <h1>🤖 Agent Network Dashboard</h1>
-  <span class="badge" id="mode-badge">HTTP</span>
+  <span class="badge" id="mode-badge">SSE …</span>
   <div class="hdr-stats">
     <span>Agenci: <b id="s-total">0</b></span>
     <span>Aktywni: <b id="s-active">0</b></span>
-    <span>Tick: <b id="s-tick">0</b></span>
+    <span>Ruflo: <b id="s-ruflo" class="ruflo-count">0</b></span>
+    <span>Eventy: <b id="s-events">0</b></span>
   </div>
 </header>
 
@@ -91,9 +98,10 @@
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
-let nodes=[], links=[], agentTypes={}, lastMsgs=[], tick=0, selId=null;
+let nodes=[], links=[], agentTypes={}, lastMsgs=[], selId=null;
 let sim, linkSel, nodeSel, svgG;
 let flashTimers={};
+let eventCount=0;
 
 const COLORS = {
   orchestrator:'#f59e0b', planner:'#8b5cf6', coder:'#3b82f6',
@@ -110,46 +118,84 @@ function radius(t){ return tier(t)===0?22:tier(t)===1?16:13; }
 function color(t){ return COLORS[t]||'#60a5fa'; }
 function icon(t){ return ICONS[t]||'🤖'; }
 
-// ── Fetch loop ─────────────────────────────────────────────────────────────────
+// ── SSE connection ─────────────────────────────────────────────────────────────
 let prevMsgIds = new Set();
+let reconnectDelay = 1000;
 
-async function fetchAndUpdate(){
-  try{
-    const r = await fetch('/api/agents');
-    if(!r.ok) throw new Error(r.status);
-    const data = await r.json();
-    document.getElementById('err').style.display='none';
+function connectSSE() {
+  const badge = document.getElementById('mode-badge');
+  const es = new EventSource('/api/agents/stream');
 
-    agentTypes = data.agentTypes||{};
-    const newMsgs = (data.messages||[]).filter(m=>!prevMsgIds.has(m.id));
-    newMsgs.forEach(m=>{
-      prevMsgIds.add(m.id);
-      flashLink(m.from, m.to);
-      prependLog(m, data.agents);
-    });
-    lastMsgs = data.messages||[];
+  es.onopen = () => {
+    document.getElementById('err').style.display = 'none';
+    badge.textContent = 'SSE ✓';
+    badge.className = 'badge connected';
+    reconnectDelay = 1000;
+  };
 
-    if(!sim){
-      nodes = data.agents.map(a=>({...a}));
-      links = buildLinks(nodes);
-      initGraph();
-    } else {
-      // update existing nodes in-place so d3 keeps positions
-      data.agents.forEach(a=>{
-        const n=nodes.find(n=>n.id===a.id);
-        if(n){ Object.assign(n,{status:a.status,task:a.task}); }
-      });
+  es.onmessage = (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      eventCount++;
+      document.getElementById('s-events').textContent = eventCount;
+      handleEvent(evt);
+    } catch (_) { /* ignore malformed */ }
+  };
+
+  es.onerror = () => {
+    es.close();
+    badge.textContent = 'SSE ✗';
+    badge.className = 'badge error';
+    document.getElementById('err').style.display = 'block';
+    setTimeout(() => connectSSE(), reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  };
+}
+
+// ── Event dispatcher ───────────────────────────────────────────────────────────
+function handleEvent(evt) {
+  if (evt.type === 'init') {
+    bootstrapGraph(evt.payload);
+  } else if (evt.type === 'agent:update') {
+    const n = nodes.find(n => n.id === evt.payload.id);
+    if (n) {
+      Object.assign(n, { status: evt.payload.status, task: evt.payload.task });
       updateVisuals();
+      renderList();
     }
-
-    tick++;
-    document.getElementById('s-total').textContent  = nodes.length;
-    document.getElementById('s-active').textContent = nodes.filter(n=>n.status!=='idle').length;
-    document.getElementById('s-tick').textContent   = tick;
-    renderList();
-  } catch(e){
-    document.getElementById('err').style.display='block';
+  } else if (evt.type === 'message') {
+    const msg = evt.payload;
+    if (!prevMsgIds.has(msg.id)) {
+      prevMsgIds.add(msg.id);
+      flashLink(msg.from, msg.to);
+      prependLog(msg);
+    }
   }
+  updateStats();
+}
+
+// ── Bootstrap graph from init payload ──────────────────────────────────────────
+function bootstrapGraph(data) {
+  agentTypes = data.agentTypes || {};
+
+  // Preserve existing node positions
+  const posMap = {};
+  nodes.forEach(n => { if (n.x !== undefined) posMap[n.id] = { x: n.x, y: n.y, vx: n.vx, vy: n.vy }; });
+
+  nodes = (data.agents || []).map(a => {
+    const pos = posMap[a.id];
+    return pos ? { ...a, ...pos } : { ...a };
+  });
+  links = buildLinks(nodes);
+
+  if (!sim) {
+    initGraph();
+  } else {
+    rebuildGraph();
+  }
+
+  updateStats();
+  renderList();
 }
 
 function buildLinks(ns){
@@ -161,6 +207,13 @@ function buildLinks(ns){
     });
   });
   return out;
+}
+
+// ── Stats ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('s-total').textContent  = nodes.length;
+  document.getElementById('s-active').textContent = nodes.filter(n => n.status !== 'idle').length;
+  document.getElementById('s-ruflo').textContent  = nodes.filter(n => n.real === true).length;
 }
 
 // ── D3 ─────────────────────────────────────────────────────────────────────────
@@ -198,15 +251,17 @@ function initGraph(){
 
   nodeSel.append('circle')
     .attr('r',d=>radius(d.type))
-    .attr('fill',d=>color(d.type)+'28')
-    .attr('stroke',d=>color(d.type))
+    .attr('fill',d=>nodeColor(d)+'28')
+    .attr('stroke',d=>nodeStroke(d))
+    .attr('stroke-width',d=>d.real?3.5:2.5)
     .style('filter','url(#glow)');
 
   nodeSel.append('text').attr('class','icon')
     .attr('y',1).style('font-size',d=>tier(d.type)===0?'15px':'11px').text(d=>icon(d.type));
 
   nodeSel.append('text').attr('class','lbl')
-    .attr('y',d=>radius(d.type)+11).text(d=>d.name);
+    .attr('y',d=>radius(d.type)+11).text(d=>d.name)
+    .attr('fill',d=>d.real?'#4ade80':null);
 
   sim=d3.forceSimulation(nodes)
     .force('link',d3.forceLink(links).id(d=>d.id).distance(120))
@@ -219,6 +274,55 @@ function initGraph(){
       nodeSel.attr('transform',d=>`translate(${d.x},${d.y})`);
     });
 }
+
+function rebuildGraph() {
+  const el=document.getElementById('svg');
+  const W=el.clientWidth, H=el.clientHeight;
+
+  // Re-bindlinks
+  linkSel = svgG.select('g:first-child').selectAll('line').data(links, d=>d.id);
+  linkSel.exit().remove();
+  linkSel = linkSel.enter().append('line').attr('class','link').merge(linkSel);
+
+  // Re-bind nodes
+  const nodeG = svgG.select('g:nth-child(2)');
+  nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
+  nodeSel.exit().remove();
+  const enter = nodeSel.enter().append('g').attr('class','node')
+    .call(d3.drag()
+      .on('start',(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on('drag', (e,d)=>{d.fx=e.x;d.fy=e.y;})
+      .on('end',  (e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}))
+    .on('click',(_,d)=>selectNode(d.id))
+    .on('mouseover',(e,d)=>showTip(e,d))
+    .on('mousemove',(e)=>moveTip(e))
+    .on('mouseout',()=>hideTip());
+
+  enter.append('circle')
+    .attr('r',d=>radius(d.type))
+    .attr('fill',d=>nodeColor(d)+'28')
+    .attr('stroke',d=>nodeStroke(d))
+    .attr('stroke-width',d=>d.real?3.5:2.5)
+    .style('filter','url(#glow)');
+  enter.append('text').attr('class','icon')
+    .attr('y',1).style('font-size',d=>tier(d.type)===0?'15px':'11px').text(d=>icon(d.type));
+  enter.append('text').attr('class','lbl')
+    .attr('y',d=>radius(d.type)+11).text(d=>d.name)
+    .attr('fill',d=>d.real?'#4ade80':null);
+
+  nodeSel = enter.merge(nodeSel);
+
+  sim.nodes(nodes);
+  sim.force('link').links(links);
+  sim.force('center', d3.forceCenter(W/2, H/2));
+  sim.alpha(.3).restart();
+
+  updateVisuals();
+}
+
+// ── Node color helpers ─────────────────────────────────────────────────────────
+function nodeColor(d){ return d.real ? '#4ade80' : color(d.type); }
+function nodeStroke(d){ return d.real ? '#4ade80' : color(d.type); }
 
 // Status → visual modifiers
 const STATUS_RING = {
@@ -235,16 +339,16 @@ function statusStrokeColor(d){
   if(s==='communicating') return '#fb923c';
   if(s==='thinking')      return '#60a5fa';
   if(s==='done')          return '#4ade80';
-  return color(n.type);
+  return n.real ? '#4ade80' : color(n.type);
 }
 
 function updateVisuals(){
   if(!nodeSel) return;
   nodeSel.select('circle')
-    .attr('stroke', d => { const n=nodes.find(n=>n.id===d.id)||d; return statusStrokeColor(n); })
-    .attr('fill',   d => { const n=nodes.find(n=>n.id===d.id)||d; const m=STATUS_RING[n.status]||STATUS_RING.idle; return color(n.type)+(selId===d.id?'55':m.opacity); })
+    .attr('stroke', d => statusStrokeColor(d))
+    .attr('fill',   d => { const n=nodes.find(n=>n.id===d.id)||d; const m=STATUS_RING[n.status]||STATUS_RING.idle; return nodeColor(n)+(selId===d.id?'55':m.opacity); })
     .attr('r',      d => { const n=nodes.find(n=>n.id===d.id)||d; const base=radius(n.type); const active=n.status==='working'||n.status==='communicating'; return base+(selId===d.id?5:active?2:0); })
-    .attr('stroke-width', d => { const n=nodes.find(n=>n.id===d.id)||d; const m=STATUS_RING[n.status]||STATUS_RING.idle; return selId===d.id?4:m.strokeW; });
+    .attr('stroke-width', d => { const n=nodes.find(n=>n.id===d.id)||d; const m=STATUS_RING[n.status]||STATUS_RING.idle; return selId===d.id?4:n.real?Math.max(m.strokeW,3.5):m.strokeW; });
 }
 
 // ── Flash ──────────────────────────────────────────────────────────────────────
@@ -266,8 +370,9 @@ function flashLink(fromId, toId){
 const tip=document.getElementById('tip');
 function showTip(e,d){
   const conns=(d.connections||[]).length;
-  tip.innerHTML=`<b>${icon(d.type)} ${d.name}</b><br>
-    <span style="color:${color(d.type)}">${d.type}</span> &bull;
+  const realTag = d.real ? '<span class="real-tag">ruflo</span>' : '';
+  tip.innerHTML=`<b>${icon(d.type)} ${d.name}${realTag}</b><br>
+    <span style="color:${nodeColor(d)}">${d.type}</span> &bull;
     <span class="sb s-${d.status}">${d.status}</span>
     <div style="color:var(--muted);margin-top:4px">${d.task||'oczekuje...'}</div>
     <div id="conn-count">Połączenia: ${conns}</div>`;
@@ -284,10 +389,10 @@ function hideTip(){ tip.style.opacity=0; }
 // ── Sidebar list ───────────────────────────────────────────────────────────────
 function renderList(){
   document.getElementById('agent-list').innerHTML=nodes.map(n=>`
-    <div class="ai${n.id===selId?' sel':''}" onclick="selectNode('${n.id}')">
-      <div class="ai-dot" style="background:${color(n.type)}"></div>
+    <div class="ai${n.id===selId?' sel':''}${n.real?' real-agent':''}" onclick="selectNode('${n.id}')">
+      <div class="ai-dot" style="background:${nodeColor(n)}"></div>
       <div class="ai-info">
-        <div class="ai-name">${icon(n.type)} ${n.name}</div>
+        <div class="ai-name${n.real?' real':''}">${icon(n.type)} ${n.name}</div>
         <div class="ai-task">${n.task||'oczekuje...'}</div>
       </div>
       <span class="sb s-${n.status}">${n.status}</span>
@@ -301,20 +406,19 @@ function selectNode(id){
 }
 
 // ── Log ────────────────────────────────────────────────────────────────────────
-function agentName(id,agents){ return (agents||nodes).find(n=>n.id===id)?.name||id; }
+function agentName(id){ return nodes.find(n=>n.id===id)?.name||id; }
 
-function prependLog(m, agents){
+function prependLog(m){
   const el=document.getElementById('msg-log');
   const d=document.createElement('div');
   d.className='mi new';
-  d.innerHTML=`<div><span class="from">${agentName(m.from,agents)}</span><span class="arr">→</span><span class="to">${agentName(m.to,agents)}</span></div><div class="txt">${m.text}</div>`;
+  d.innerHTML=`<div><span class="from">${agentName(m.from)}</span><span class="arr">→</span><span class="to">${agentName(m.to)}</span></div><div class="txt">${m.text}</div>`;
   el.prepend(d);
   while(el.children.length>40) el.lastChild.remove();
 }
 
 // ── Start ──────────────────────────────────────────────────────────────────────
-fetchAndUpdate();
-setInterval(fetchAndUpdate, 1500);
+connectSSE();
 </script>
 </body>
 </html>

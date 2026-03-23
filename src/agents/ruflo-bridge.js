@@ -21,6 +21,16 @@ const TYPE_META = {
   'test-architect':        { color: '#0891b2', icon: '🧪', tier: 2 },
 };
 
+// Normalise raw CLI status string to internal status values
+function normaliseStatus(raw) {
+  const s = (raw || '').trim().toLowerCase();
+  if (s === 'active' || s === 'running' || s === 'working') return 'working';
+  if (s === 'thinking') return 'thinking';
+  if (s === 'done' || s === 'finished') return 'done';
+  if (s === 'idle') return 'idle';
+  return 'idle';
+}
+
 // Parse ruflo table output into agent objects
 function parseAgentTable(raw) {
   const lines = raw.split('\n').filter(l => l.includes('|'));
@@ -42,7 +52,7 @@ function parseAgentTable(raw) {
     // ID column is empty in ruflo output, so after filter(Boolean):
     // cells: [type, status, created, last-activity]
     const type   = cells[0] || 'coder';
-    const status = cells[1] || 'idle';
+    const status = normaliseStatus(cells[1]);
     const meta   = TYPE_META[type] || { color: '#6b7280', icon: '🤖', tier: 2 };
     const label  = type.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
@@ -50,9 +60,8 @@ function parseAgentTable(raw) {
       id:          `ruflo-${type}-${agents.length + 1}`,
       name:        `${label} #${agents.length + 1}`,
       type,
-      status:      status,
+      status,
       task:        ACTIVE_TASKS[type] || 'Ruflo task aktywny',
-      _baseStatus: status,
       connections: ['ruflo-orch'],
       real:        true,
       ...meta,
@@ -75,33 +84,14 @@ const ACTIVE_TASKS = {
   'performance-engineer': 'Benchmark API endpoints — latency profiling',
 };
 
-// Live status cycling for real agents (visual activity even when ruflo returns idle)
-const LIVE_STATUSES = ['working', 'thinking', 'communicating', 'working', 'working'];
-let liveStateIdx = {};
-let liveStateTick = 0;
-
-function getLiveStatus(agentId) {
-  if (!(agentId in liveStateIdx)) liveStateIdx[agentId] = Math.floor(Math.random() * LIVE_STATUSES.length);
-  // advance each agent independently every tick (offset by agent hash)
-  const offset = agentId.charCodeAt(agentId.length - 1) % 3;
-  if ((liveStateTick + offset) % 2 === 0) {
-    liveStateIdx[agentId] = (liveStateIdx[agentId] + 1) % LIVE_STATUSES.length;
-  }
-  return LIVE_STATUSES[liveStateIdx[agentId]];
-}
-
 let cachedAgents = [];
 let lastFetch = 0;
 const CACHE_TTL = 5000; // 5s cache
 
 function getRealAgents() {
-  liveStateTick++;
   const now = Date.now();
-  // Update live statuses even from cache
   if (now - lastFetch < CACHE_TTL) {
-    return cachedAgents.map(a =>
-      a.id === 'ruflo-orch' ? a : { ...a, status: getLiveStatus(a.id) }
-    );
+    return cachedAgents;
   }
 
   try {
@@ -138,10 +128,7 @@ function getRealAgents() {
     // ruflo not available — return cached
   }
 
-  // Always apply live status cycling to all non-orchestrator real agents
-  return cachedAgents.map(a =>
-    a.id === 'ruflo-orch' ? a : { ...a, status: getLiveStatus(a.id) }
-  );
+  return cachedAgents;
 }
 
 module.exports = { getRealAgents };

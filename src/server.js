@@ -25,11 +25,18 @@ wss.on('connection', (ws) => {
   });
 });
 
-// ─── Broadcast to all connected clients ──────────────────────────────────────
+// ─── Broadcast to all connected clients (WebSocket + SSE) ───────────────────
+const sseClients = app.sseClients;
+
 simulator.setBroadcast((msg) => {
+  // WebSocket clients
   wss.clients.forEach(client => {
     if (client.readyState === 1) client.send(msg);
   });
+  // SSE clients
+  for (const res of sseClients) {
+    res.write(`data: ${msg}\n\n`);
+  }
 });
 
 simulator.start(1500);
