@@ -25,7 +25,14 @@
       "Bash(git checkout:*)",
       "Bash(git push:*)",
       "Bash(gh pr:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(findstr :3000)",
+      "Bash(taskkill /PID 35244 /F)",
+      "Bash(cmd /c \"taskkill /PID 35244 /F\")",
+      "Bash(curl -s http://localhost:3000/api/agents)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''Agenci: {len\\(d[\"\"agents\"\"]\\)}, Wiadomosci: {len\\(d[\"\"messages\"\"]\\)}''''\\)\")",
+      "Bash(cmd /c \"for /f \"\"tokens=5\"\" %a in \\(''netstat -ano ^| findstr :3000 ^| findstr LISTENING''\\) do taskkill /PID %a /F\")",
+      "Bash(curl -s http://localhost:3001/api/agents)"
     ]
   }
 }
