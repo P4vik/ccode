@@ -82,8 +82,9 @@ let liveStateTick = 0;
 
 function getLiveStatus(agentId) {
   if (!(agentId in liveStateIdx)) liveStateIdx[agentId] = Math.floor(Math.random() * LIVE_STATUSES.length);
-  // advance each agent independently every ~3 ticks
-  if (liveStateTick % 3 === 0) {
+  // advance each agent independently every tick (offset by agent hash)
+  const offset = agentId.charCodeAt(agentId.length - 1) % 3;
+  if ((liveStateTick + offset) % 2 === 0) {
     liveStateIdx[agentId] = (liveStateIdx[agentId] + 1) % LIVE_STATUSES.length;
   }
   return LIVE_STATUSES[liveStateIdx[agentId]];

@@ -220,13 +220,31 @@ function initGraph(){
     });
 }
 
+// Status → visual modifiers
+const STATUS_RING = {
+  working:       { strokeW: 3,   opacity: 'aa', pulse: true  },
+  thinking:      { strokeW: 2,   opacity: '55', pulse: false },
+  communicating: { strokeW: 4,   opacity: 'dd', pulse: true  },
+  done:          { strokeW: 2,   opacity: '33', pulse: false },
+  idle:          { strokeW: 1.5, opacity: '22', pulse: false },
+};
+
+function statusStrokeColor(d){
+  const n = nodes.find(n=>n.id===d.id)||d;
+  const s = n.status||'idle';
+  if(s==='communicating') return '#fb923c';
+  if(s==='thinking')      return '#60a5fa';
+  if(s==='done')          return '#4ade80';
+  return color(n.type);
+}
+
 function updateVisuals(){
   if(!nodeSel) return;
   nodeSel.select('circle')
-    .attr('stroke',d=>color(d.type))
-    .attr('fill',d=>color(d.type)+(selId===d.id?'44':'28'))
-    .attr('r',d=>radius(d.type)+(selId===d.id?5:0))
-    .attr('stroke-width',d=>selId===d.id?4:2.5);
+    .attr('stroke', d => { const n=nodes.find(n=>n.id===d.id)||d; return statusStrokeColor(n); })
+    .attr('fill',   d => { const n=nodes.find(n=>n.id===d.id)||d; const m=STATUS_RING[n.status]||STATUS_RING.idle; return color(n.type)+(selId===d.id?'55':m.opacity); })
+    .attr('r',      d => { const n=nodes.find(n=>n.id===d.id)||d; const base=radius(n.type); const active=n.status==='working'||n.status==='communicating'; return base+(selId===d.id?5:active?2:0); })
+    .attr('stroke-width', d => { const n=nodes.find(n=>n.id===d.id)||d; const m=STATUS_RING[n.status]||STATUS_RING.idle; return selId===d.id?4:m.strokeW; });
 }
 
 // ── Flash ──────────────────────────────────────────────────────────────────────
