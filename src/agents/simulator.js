@@ -2,11 +2,8 @@
 
 const store = require('./store');
 
-const COMM_PAIRS = [
-  ['orch-1', 'plan-1'], ['orch-1', 'code-1'], ['orch-1', 'mem-1'],
-  ['plan-1', 'res-1'],  ['code-1', 'rev-1'],  ['code-1', 'test-1'],
-  ['rev-1',  'code-2'], ['sec-1',  'res-1'],  ['mem-1',  'code-2'],
-];
+// Use full COMM_PAIRS from store (covers all 60 agents)
+const COMM_PAIRS = store.COMM_PAIRS;
 
 const COMM_MESSAGES = [
   'Zadanie zakończone ✓', 'Potrzebuję danych z modułu X', 'Przekazuję wyniki analizy',
