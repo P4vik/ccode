@@ -2,5 +2,12 @@ node_modules/
 .claude-flow/logs/
 .claude-flow/sessions/
 .claude-flow/data/
+.claude-flow/daemon.pid
+.claude-flow/agents/
+.claude-flow/swarm/
+.claude-flow/tasks/
+.claude-flow/hive-mind/
+.claude/memory.db
+.swarm/
 *.log
 .env
