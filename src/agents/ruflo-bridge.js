@@ -80,19 +80,19 @@ function getRealAgents() {
 
     const parsed = parseAgentTable(raw);
 
-    // Inject a ruflo orchestrator node at tier 0 if we have agents
+    // Inject ruflo orchestrator — connected to main Master Orchestrator (orch-1)
     if (parsed.length > 0) {
       parsed.unshift({
         id: 'ruflo-orch',
         name: 'Ruflo Orchestrator',
         type: 'coordinator',
         status: 'working',
-        task: `Koordynuję ${parsed.length} agentów`,
-        connections: [],
+        task: `Koordynuję ${parsed.length} prawdziwych agentów`,
+        connections: ['orch-1'],   // bridge to main Master Orchestrator
         real: true,
         color: '#f59e0b',
-        icon: '👑',
-        tier: 0,
+        icon: '⚡',
+        tier: 1,
       });
     }
 
