@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-03-24T22:09:04.000Z",
+  "plugins": {
+    "@claude-flow/neural": {"name": "@claude-flow/neural", "version": "3.0.0-alpha.7", "installedAt": "2026-03-24T21:28:33.728Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/security": {"name": "@claude-flow/security", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/embeddings": {"name": "@claude-flow/embeddings", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/claims": {"name": "@claude-flow/claims", "version": "3.0.0-alpha.8", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/performance": {"name": "@claude-flow/performance", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/memory": {"name": "@claude-flow/memory", "version": "3.0.0-alpha.12", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/shared": {"name": "@claude-flow/shared", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugins": {"name": "@claude-flow/plugins", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-agentic-qe": {"name": "@claude-flow/plugin-agentic-qe", "version": "3.0.0-alpha.4", "installedAt": "2026-03-24T22:09:04.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-prime-radiant": {"name": "@claude-flow/plugin-prime-radiant", "version": "0.1.5", "installedAt": "2026-03-24T22:09:04.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-cognitive-kernel": {"name": "@claude-flow/plugin-cognitive-kernel", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-financial-risk": {"name": "@claude-flow/plugin-financial-risk", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-healthcare-clinical": {"name": "@claude-flow/plugin-healthcare-clinical", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-hyperbolic-reasoning": {"name": "@claude-flow/plugin-hyperbolic-reasoning", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-perf-optimizer": {"name": "@claude-flow/plugin-perf-optimizer", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-quantum-optimizer": {"name": "@claude-flow/plugin-quantum-optimizer", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-test-intelligence": {"name": "@claude-flow/plugin-test-intelligence", "version": "3.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/plugin-gastown-bridge": {"name": "@claude-flow/plugin-gastown-bridge", "version": "0.1.3", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []},
+    "@claude-flow/teammate-plugin": {"name": "@claude-flow/teammate-plugin", "version": "1.0.0-alpha.1", "installedAt": "2026-03-24T22:07:54.000Z", "enabled": true, "source": "npm", "commands": [], "hooks": []}
+  }
+}
