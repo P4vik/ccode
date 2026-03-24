@@ -70,7 +70,7 @@
 <body>
 <header>
   <div class="dot"></div>
-  <h1>🤖 Agent Network Dashboard</h1>
+  <h1>🤖 Agent Network Dashboard — LIVE</h1>
   <span class="badge" id="mode-badge">SSE …</span>
   <div class="hdr-stats">
     <span>Agenci: <b id="s-total">0</b></span>
@@ -161,6 +161,15 @@ function handleEvent(evt) {
     if (n) {
       Object.assign(n, { status: evt.payload.status, task: evt.payload.task });
       updateVisuals();
+      renderList();
+    }
+  } else if (evt.type === 'agent:new') {
+    // New agent joined — add to graph
+    const a = evt.payload;
+    if (!nodes.find(n => n.id === a.id)) {
+      nodes.push({ ...a });
+      links = buildLinks(nodes);
+      if (sim) rebuildGraph();
       renderList();
     }
   } else if (evt.type === 'message') {
