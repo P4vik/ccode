@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RuFlo Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --cyan: #39d353;
+    --accent: #1f6feb;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header h1 { font-size: 16px; font-weight: 600; color: var(--blue); }
+  header .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .badge.running { background: #1c3a2c; color: var(--green); border: 1px solid #2d5a3d; }
+  .badge.stopped { background: #3a1c1c; color: var(--red); border: 1px solid #5a2d2d; }
+  .badge.unknown { background: #2a2a1c; color: var(--yellow); border: 1px solid #4a3d1c; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .dot.pulse { animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  #last-update { margin-left: auto; color: var(--muted); font-size: 11px; }
+  #ws-status { font-size: 11px; }
+  #ws-status.connected { color: var(--green); }
+  #ws-status.disconnected { color: var(--red); }
+
+  /* ── Grid ── */
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 10px 14px;
+    background: #1c2128;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+  }
+  .panel-header .icon { font-size: 14px; }
+  .panel-header .count {
+    margin-left: auto;
+    background: var(--border);
+    color: var(--text);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .panel-body { padding: 12px; }
+
+  /* ── System panel ── */
+  #panel-system { grid-column: 1 / -1; }
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+  }
+  .metric-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .metric-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 4px; }
+  .metric-value { font-size: 20px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .metric-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Agent cards ── */
+  .agents-list { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; }
+  .agent-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .agent-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .agent-status-dot.working { background: var(--green); }
+  .agent-status-dot.idle { background: var(--yellow); }
+  .agent-status-dot.waiting { background: var(--blue); }
+  .agent-status-dot.error { background: var(--red); }
+  .agent-status-dot.unknown { background: var(--muted); }
+  .agent-name { font-weight: 600; color: var(--text); font-size: 12px; }
+  .agent-type { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+  .agent-task { color: var(--muted); font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 8px;
+    text-transform: uppercase;
+  }
+  .agent-badge.working { background: #1c3a2c; color: var(--green); }
+  .agent-badge.idle { background: #3a2e1c; color: var(--yellow); }
+  .agent-badge.waiting { background: #1c2d3a; color: var(--blue); }
+  .agent-badge.error { background: #3a1c1c; color: var(--red); }
+  .agent-badge.unknown { background: #1c1c1c; color: var(--muted); }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .empty-state .emoji { font-size: 28px; margin-bottom: 8px; display: block; }
+
+  /* ── Tasks ── */
+  .tasks-list { display: flex; flex-direction: column; gap: 6px; max-height: 380px; overflow-y: auto; }
+  .task-row {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .task-name { flex: 1; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-assignee { font-size: 10px; color: var(--muted); }
+  .task-status {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 8px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .task-status.running { background: #1c3a2c; color: var(--green); }
+  .task-status.pending { background: #3a2e1c; color: var(--yellow); }
+  .task-status.completed { background: #1c2d3a; color: var(--blue); }
+  .task-status.failed { background: #3a1c1c; color: var(--red); }
+
+  /* ── Communication log ── */
+  .comm-log {
+    max-height: 380px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .comm-entry {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .comm-time { color: var(--muted); flex-shrink: 0; }
+  .comm-from { color: var(--blue); flex-shrink: 0; font-weight: 600; }
+  .comm-arrow { color: var(--muted); flex-shrink: 0; }
+  .comm-to { color: var(--purple); flex-shrink: 0; font-weight: 600; }
+  .comm-type { padding: 0px 5px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; flex-shrink: 0; }
+  .comm-type.task { background: #1c3a2c; color: var(--green); }
+  .comm-type.result { background: #1c2d3a; color: var(--blue); }
+  .comm-type.memory { background: #2d1c3a; color: var(--purple); }
+  .comm-msg { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-line { color: var(--muted); font-size: 10px; padding: 2px 0; }
+
+  /* ── Errors ── */
+  .error-banner {
+    background: #3a1c1c;
+    border: 1px solid #5a2d2d;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 0 12px 12px;
+    font-size: 11px;
+    color: var(--red);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Raw output toggle ── */
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 11px; user-select: none; }
+  summary:hover { color: var(--text); }
+  .raw-output {
+    margin-top: 6px;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 10px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ RuFlo Dashboard</h1>
+  <span id="system-badge" class="badge unknown"><span class="dot"></span> loading...</span>
+  <span id="ws-status" class="disconnected">● WS disconnected</span>
+  <span id="last-update">—</span>
+</header>
+
+<main>
+  <!-- System panel (full width) -->
+  <div class="panel" id="panel-system">
+    <div class="panel-header"><span class="icon">🖥</span> System Metrics</div>
+    <div class="panel-body">
+      <div class="metrics-grid" id="metrics-grid">
+        <div class="metric-card"><div class="metric-label">System</div><div class="metric-value" id="m-status">—</div></div>
+        <div class="metric-card"><div class="metric-label">Daemon</div><div class="metric-value" id="m-daemon">—</div><div class="metric-sub" id="m-daemon-pid"></div></div>
+        <div class="metric-card"><div class="metric-label">Agentów aktywnych</div><div class="metric-value" id="m-agents-active">0</div><div class="metric-sub" id="m-agents-sub"></div></div>
+        <div class="metric-card"><div class="metric-label">Memory entries</div><div class="metric-value" id="m-mem-entries">0</div><div class="metric-sub" id="m-mem-sub"></div></div>
+        <div class="metric-card"><div class="metric-label">Memory backend</div><div class="metric-value" id="m-mem-backend">—</div></div>
+        <div class="metric-card"><div class="metric-label">Tasks total</div><div class="metric-value" id="m-tasks-total">0</div><div class="metric-sub" id="m-tasks-sub"></div></div>
+        <div class="metric-card"><div class="metric-label">MCP Server</div><div class="metric-value" id="m-mcp">—</div></div>
+        <div class="metric-card"><div class="metric-label">CLI Version</div><div class="metric-value" style="font-size:14px" id="m-version">—</div></div>
+      </div>
+      <div id="errors-container"></div>
+      <details id="raw-details" style="display:none">
+        <summary>Raw CLI output</summary>
+        <pre class="raw-output" id="raw-output"></pre>
+      </details>
+    </div>
+  </div>
+
+  <!-- Agents panel -->
+  <div class="panel">
+    <div class="panel-header"><span class="icon">🤖</span> Agenci <span class="count" id="agents-count">0</span></div>
+    <div class="panel-body">
+      <div class="agents-list" id="agents-list">
+        <div class="empty-state"><span class="emoji">💤</span>Brak aktywnych agentów</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tasks panel -->
+  <div class="panel">
+    <div class="panel-header"><span class="icon">📋</span> Zadania <span class="count" id="tasks-count">0</span></div>
+    <div class="panel-body">
+      <div class="tasks-list" id="tasks-list">
+        <div class="empty-state"><span class="emoji">📭</span>Brak zadań w kolejce</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Communication panel -->
+  <div class="panel" style="grid-column: 1 / -1;">
+    <div class="panel-header"><span class="icon">📡</span> Komunikacja & Logi <span class="count" id="comm-count">0</span></div>
+    <div class="panel-body">
+      <div class="comm-log" id="comm-log">
+        <div class="empty-state"><span class="emoji">🔇</span>Brak wiadomości</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const WS_URL = `ws://${location.host}`;
+  let ws = null;
+  let reconnectTimer = null;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function el(id) { return document.getElementById(id); }
+
+  function fmtTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleTimeString('pl-PL', { hour12: false });
+  }
+
+  function statusClass(s) {
+    if (!s) return 'unknown';
+    s = s.toLowerCase();
+    if (s === 'running' || s === 'working' || s === 'active') return 'working';
+    if (s === 'idle') return 'idle';
+    if (s === 'waiting' || s === 'pending') return 'waiting';
+    if (s === 'failed' || s === 'error') return 'error';
+    return 'unknown';
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+  function render(data) {
+    if (!data || data.error) {
+      el('system-badge').className = 'badge stopped';
+      el('system-badge').innerHTML = '<span class="dot"></span> ERROR: ' + (data && data.error ? data.error : 'unknown');
+      return;
+    }
+
+    el('last-update').textContent = 'Ostatnia aktualizacja: ' + fmtTime(data.timestamp);
+
+    // System badge
+    const sysStatus = data.system && data.system.systemStatus ? data.system.systemStatus : 'unknown';
+    const badgeClass = sysStatus === 'running' ? 'running' : sysStatus === 'stopped' ? 'stopped' : 'unknown';
+    const dotPulse = sysStatus === 'running' ? 'pulse' : '';
+    el('system-badge').className = `badge ${badgeClass}`;
+    el('system-badge').innerHTML = `<span class="dot ${dotPulse}"></span> ${sysStatus.toUpperCase()}`;
+
+    // Metrics
+    el('m-status').textContent = sysStatus.toUpperCase();
+    el('m-status').style.color = sysStatus === 'running' ? 'var(--green)' : sysStatus === 'stopped' ? 'var(--red)' : 'var(--yellow)';
+
+    const daemon = data.system && data.system.daemonStatus;
+    if (daemon) {
+      el('m-daemon').textContent = daemon.running ? 'RUNNING' : 'STOPPED';
+      el('m-daemon').style.color = daemon.running ? 'var(--green)' : 'var(--red)';
+      el('m-daemon-pid').textContent = daemon.pid ? `PID: ${daemon.pid}` : '';
+    }
+
+    const agents = data.agents && data.agents.counts;
+    if (agents) {
+      el('m-agents-active').textContent = agents.active || 0;
+      el('m-agents-sub').textContent = `idle: ${agents.idle || 0} / total: ${agents.total || 0}`;
+    }
+
+    const mem = data.memory && data.memory.stats;
+    if (mem) {
+      el('m-mem-entries').textContent = mem.entries || 0;
+      el('m-mem-sub').textContent = `size: ${mem.size} | cache: ${mem.cacheHitRate}`;
+      el('m-mem-backend').textContent = mem.backend || '—';
+    }
+
+    const tasks = data.tasks && data.tasks.counts;
+    if (tasks) {
+      el('m-tasks-total').textContent = tasks.total || 0;
+      el('m-tasks-sub').textContent = `running: ${tasks.running} | failed: ${tasks.failed}`;
+    }
+
+    const mcp = data.mcp;
+    if (mcp) {
+      el('m-mcp').textContent = mcp.running ? 'RUNNING' : 'STOPPED';
+      el('m-mcp').style.color = mcp.running ? 'var(--green)' : 'var(--red)';
+    }
+
+    el('m-version').textContent = (data.system && data.system.cliVersion) || '—';
+
+    // Errors
+    const errContainer = el('errors-container');
+    errContainer.innerHTML = '';
+    if (data.errors && data.errors.length) {
+      data.errors.forEach(e => {
+        const div = document.createElement('div');
+        div.className = 'error-banner';
+        div.textContent = `⚠ [${e.source}] ${e.msg}`;
+        errContainer.appendChild(div);
+      });
+    }
+
+    // Raw output
+    const rawDetails = el('raw-details');
+    const rawPre = el('raw-output');
+    if (data.rawOutputs) {
+      rawDetails.style.display = '';
+      rawPre.textContent = [
+        '=== STATUS ===', data.rawOutputs.status || '(empty)',
+        '=== SWARM ===', data.rawOutputs.swarm || '(empty)',
+        '=== DAEMON ===', data.rawOutputs.daemon || '(empty)'
+      ].join('\n');
+    }
+
+    // Agents
+    renderAgents(data.agents && data.agents.list ? data.agents.list : []);
+
+    // Tasks
+    renderTasks(data.tasks && data.tasks.list ? data.tasks.list : []);
+
+    // Communication
+    renderComm(data);
+  }
+
+  function renderAgents(list) {
+    const container = el('agents-list');
+    el('agents-count').textContent = list.length;
+
+    if (!list.length) {
+      container.innerHTML = '<div class="empty-state"><span class="emoji">💤</span>Brak aktywnych agentów<br><small style="color:var(--muted)">Uruchom swarm: npx @claude-flow/cli@latest swarm init</small></div>';
+      return;
+    }
+
+    container.innerHTML = list.map(a => {
+      const sc = statusClass(a.status);
+      return `<div class="agent-card">
+        <div class="agent-status-dot ${sc}"></div>
+        <div>
+          <div class="agent-name">${esc(a.name || a.id)}</div>
+          <div class="agent-type">${esc(a.type || 'unknown')}</div>
+          ${a.task ? `<div class="agent-task">▸ ${esc(a.task)}</div>` : ''}
+          ${a.uptime ? `<div class="agent-task">⏱ ${esc(a.uptime)}</div>` : ''}
+        </div>
+        <span class="agent-badge ${sc}">${esc(a.status || 'unknown')}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function renderTasks(list) {
+    const container = el('tasks-list');
+    el('tasks-count').textContent = list.length;
+
+    if (!list.length) {
+      container.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>Brak zadań w kolejce</div>';
+      return;
+    }
+
+    container.innerHTML = list.map(t => {
+      const sc = statusClass(t.status);
+      return `<div class="task-row">
+        <span class="task-status ${sc}">${esc(t.status)}</span>
+        <span class="task-name">${esc(t.name || t.id)}</span>
+        ${t.assignee ? `<span class="task-assignee">→ ${esc(t.assignee)}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function renderComm(data) {
+    const container = el('comm-log');
+    const commLog = data.communication && data.communication.log;
+    const logLines = data.communication && data.communication.logLines;
+
+    let count = 0;
+    let html = '';
+
+    // Activity log from swarm-activity.json
+    if (commLog && commLog.length) {
+      commLog.forEach(entry => {
+        const type = (entry.type || 'task').toLowerCase();
+        const typeClass = ['task','result','memory'].includes(type) ? type : 'task';
+        html += `<div class="comm-entry">
+          <span class="comm-time">${fmtTime(entry.timestamp)}</span>
+          <span class="comm-from">${esc(entry.from || '?')}</span>
+          <span class="comm-arrow">→</span>
+          <span class="comm-to">${esc(entry.to || '?')}</span>
+          <span class="comm-type ${typeClass}">${esc(typeClass)}</span>
+          <span class="comm-msg">${esc(entry.message || entry.content || '')}</span>
+        </div>`;
+        count++;
+      });
+    }
+
+    // Daemon log lines
+    if (logLines && logLines.length) {
+      logLines.slice(-10).forEach(line => {
+        html += `<div class="comm-entry log-line"><span class="comm-time">LOG</span><span class="comm-msg">${esc(line)}</span></div>`;
+        count++;
+      });
+    }
+
+    el('comm-count').textContent = count;
+
+    if (!count) {
+      container.innerHTML = '<div class="empty-state"><span class="emoji">🔇</span>Brak wiadomości między agentami<br><small style="color:var(--muted)">Komunikacja pojawi się gdy agenty będą aktywne</small></div>';
+    } else {
+      container.innerHTML = html;
+      // Scroll to bottom
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────────
+  function connect() {
+    ws = new WebSocket(WS_URL);
+    const wsEl = el('ws-status');
+
+    ws.addEventListener('open', () => {
+      wsEl.textContent = '● WS connected';
+      wsEl.className = 'connected';
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    });
+
+    ws.addEventListener('message', (e) => {
+      try { render(JSON.parse(e.data)); }
+      catch (err) { console.error('parse error', err); }
+    });
+
+    ws.addEventListener('close', () => {
+      wsEl.textContent = '● WS disconnected';
+      wsEl.className = 'disconnected';
+      reconnectTimer = setTimeout(connect, 3000);
+    });
+
+    ws.addEventListener('error', () => {
+      ws.close();
+    });
+  }
+
+  connect();
+
+  // Fallback: fetch via REST if WS fails after 5s
+  setTimeout(() => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      fetch('/api/data').then(r => r.json()).then(render).catch(console.error);
+    }
+  }, 5000);
+</script>
+</body>
+</html>
