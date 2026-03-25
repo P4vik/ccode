@@ -192,35 +192,55 @@
   .task-status.completed { background: #1c2d3a; color: var(--blue); }
   .task-status.failed { background: #3a1c1c; color: var(--red); }
 
-  /* ── Communication log ── */
-  .comm-log {
-    max-height: 380px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .comm-entry {
+  /* ── Graph panel ── */
+  #graph-container {
+    position: relative;
+    width: 100%;
+    height: 420px;
     background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 6px 10px;
-    font-size: 11px;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
+    border-radius: 6px;
+    overflow: hidden;
   }
-  .comm-time { color: var(--muted); flex-shrink: 0; }
-  .comm-from { color: var(--blue); flex-shrink: 0; font-weight: 600; }
-  .comm-arrow { color: var(--muted); flex-shrink: 0; }
-  .comm-to { color: var(--purple); flex-shrink: 0; font-weight: 600; }
-  .comm-type { padding: 0px 5px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; flex-shrink: 0; }
-  .comm-type.task { background: #1c3a2c; color: var(--green); }
-  .comm-type.result { background: #1c2d3a; color: var(--blue); }
-  .comm-type.memory { background: #2d1c3a; color: var(--purple); }
-  .comm-msg { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .log-line { color: var(--muted); font-size: 10px; padding: 2px 0; }
+  #graph-svg { width: 100%; height: 100%; cursor: grab; }
+  #graph-svg:active { cursor: grabbing; }
+
+  /* Node pulse for working agents */
+  @keyframes node-pulse {
+    0%   { r: 26; opacity: .9; }
+    50%  { r: 31; opacity: .5; }
+    100% { r: 26; opacity: .9; }
+  }
+  .node-pulse-ring { animation: node-pulse 1.4s ease-in-out infinite; }
+
+  /* Tooltip */
+  #graph-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: #1c2128;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 11px;
+    font-size: 11px;
+    color: var(--text);
+    max-width: 220px;
+    line-height: 1.5;
+    z-index: 50;
+    opacity: 0;
+    transition: opacity .15s;
+    white-space: pre-line;
+  }
+
+  /* Graph legend */
+  #graph-legend {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    display: flex;
+    gap: 12px;
+    pointer-events: none;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
   /* ── Errors ── */
   .error-banner {
@@ -312,12 +332,29 @@
     </div>
   </div>
 
-  <!-- Communication panel -->
+  <!-- Communication panel (D3 graph) -->
   <div class="panel" style="grid-column: 1 / -1;">
-    <div class="panel-header"><span class="icon">📡</span> Komunikacja & Logi <span class="count" id="comm-count">0</span></div>
-    <div class="panel-body">
-      <div class="comm-log" id="comm-log">
-        <div class="empty-state"><span class="emoji">🔇</span>Brak wiadomości</div>
+    <div class="panel-header">
+      <span class="icon">🕸</span> Siatka Agentów
+      <span class="count" id="comm-count">0 węzłów</span>
+    </div>
+    <div class="panel-body" style="padding: 0; position: relative;">
+      <div id="graph-container">
+        <svg id="graph-svg"></svg>
+        <div id="graph-tooltip"></div>
+        <div id="graph-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Coordinator</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>Worker/Coder</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Tester/Reviewer</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#6b7280"></div>Idle/Unknown</div>
+          <div class="legend-item">
+            <svg width="28" height="10" style="overflow:visible">
+              <line x1="0" y1="5" x2="20" y2="5" stroke="#6b7280" stroke-width="1" stroke-dasharray="3,2"/>
+              <polygon points="20,2 28,5 20,8" fill="#6b7280"/>
+            </svg>
+            Komunikacja
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -479,47 +516,9 @@
   }
 
   function renderComm(data) {
-    const container = el('comm-log');
-    const commLog = data.communication && data.communication.log;
-    const logLines = data.communication && data.communication.logLines;
-
-    let count = 0;
-    let html = '';
-
-    // Activity log from swarm-activity.json
-    if (commLog && commLog.length) {
-      commLog.forEach(entry => {
-        const type = (entry.type || 'task').toLowerCase();
-        const typeClass = ['task','result','memory'].includes(type) ? type : 'task';
-        html += `<div class="comm-entry">
-          <span class="comm-time">${fmtTime(entry.timestamp)}</span>
-          <span class="comm-from">${esc(entry.from || '?')}</span>
-          <span class="comm-arrow">→</span>
-          <span class="comm-to">${esc(entry.to || '?')}</span>
-          <span class="comm-type ${typeClass}">${esc(typeClass)}</span>
-          <span class="comm-msg">${esc(entry.message || entry.content || '')}</span>
-        </div>`;
-        count++;
-      });
-    }
-
-    // Daemon log lines
-    if (logLines && logLines.length) {
-      logLines.slice(-10).forEach(line => {
-        html += `<div class="comm-entry log-line"><span class="comm-time">LOG</span><span class="comm-msg">${esc(line)}</span></div>`;
-        count++;
-      });
-    }
-
-    el('comm-count').textContent = count;
-
-    if (!count) {
-      container.innerHTML = '<div class="empty-state"><span class="emoji">🔇</span>Brak wiadomości między agentami<br><small style="color:var(--muted)">Komunikacja pojawi się gdy agenty będą aktywne</small></div>';
-    } else {
-      container.innerHTML = html;
-      // Scroll to bottom
-      container.scrollTop = container.scrollHeight;
-    }
+    const agentList = (data.agents && data.agents.list) || [];
+    const commLog   = (data.communication && data.communication.log) || [];
+    updateGraph(agentList, commLog);
   }
 
   function esc(s) {
@@ -562,6 +561,350 @@
       fetch('/api/data').then(r => r.json()).then(render).catch(console.error);
     }
   }, 5000);
+</script>
+
+<!-- D3.js v7 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+// ── Graph engine ──────────────────────────────────────────────────────────────
+
+const NODE_R = 26;
+const PLACEHOLDER_NODES = [
+  { id: 'coordinator', name: 'Coordinator', type: 'coordinator', status: 'idle' },
+  { id: 'worker-1',    name: 'Worker',      type: 'worker',      status: 'idle' },
+  { id: 'tester-1',    name: 'Tester',      type: 'tester',      status: 'idle' },
+  { id: 'memory',      name: 'Memory',      type: 'memory',      status: 'idle' },
+];
+
+function nodeColor(type, status) {
+  if (!type) type = '';
+  const t = type.toLowerCase();
+  if (/queen|coord|lead|orchestrat/.test(t)) return '#f97316';
+  if (/worker|coder|develop/.test(t))        return '#a855f7';
+  if (/test|review|audit/.test(t))           return '#22c55e';
+  if (/memory|store/.test(t))                return '#6366f1';
+  return '#6b7280';
+}
+
+function buildGraphData(agentList, commLog) {
+  // Build nodes
+  const nodes = agentList.length > 0
+    ? agentList.map(a => ({
+        id:     a.id || a.name,
+        name:   a.name || a.id,
+        type:   a.type || 'unknown',
+        status: a.status || 'idle',
+        task:   a.task || ''
+      }))
+    : PLACEHOLDER_NODES.map(n => ({ ...n }));
+
+  // Build link frequency map from communication log
+  const freqMap = new Map(); // "from->to" -> {count, types: Set, lastMsg}
+  for (const entry of commLog) {
+    const from = entry.from || entry.source;
+    const to   = entry.to   || entry.target;
+    if (!from || !to || from === to) continue;
+    const key = `${from}||${to}`;
+    if (!freqMap.has(key)) freqMap.set(key, { from, to, count: 0, types: new Set(), lastMsg: '' });
+    const rec = freqMap.get(key);
+    rec.count++;
+    if (entry.type) rec.types.add(entry.type);
+    rec.lastMsg = entry.message || entry.content || '';
+  }
+
+  // Only keep links where both endpoints exist as nodes
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const links = [];
+  for (const [, rec] of freqMap) {
+    if (nodeIds.has(rec.from) && nodeIds.has(rec.to)) {
+      links.push({
+        source: rec.from,
+        target: rec.to,
+        count:  rec.count,
+        types:  [...rec.types].join(', '),
+        lastMsg: rec.lastMsg
+      });
+    }
+  }
+
+  return { nodes, links };
+}
+
+// ── D3 singleton ──────────────────────────────────────────────────────────────
+
+let simulation = null;
+let svgG        = null;   // main <g> (zoomed)
+let linkSel     = null;
+let nodeSel     = null;
+let labelSel    = null;
+let nodeMap     = new Map(); // id -> {x,y} — persists positions across updates
+let prevNodeIds = '';
+
+function initGraph() {
+  const container = document.getElementById('graph-container');
+  const svgEl     = document.getElementById('graph-svg');
+  const W = container.clientWidth  || 900;
+  const H = container.clientHeight || 420;
+
+  const svg = d3.select(svgEl)
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMidYMid meet');
+
+  // Arrow markers (one per color)
+  const defs = svg.append('defs');
+  const markerColors = ['#f97316','#a855f7','#22c55e','#6366f1','#6b7280'];
+  markerColors.forEach(c => {
+    const id = 'arrow-' + c.replace('#','');
+    defs.append('marker')
+      .attr('id', id)
+      .attr('viewBox', '0 -4 10 8')
+      .attr('refX', 10 + NODE_R / 4)
+      .attr('refY', 0)
+      .attr('markerWidth', 7)
+      .attr('markerHeight', 7)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-4L10,0L0,4')
+      .attr('fill', c)
+      .attr('opacity', 0.7);
+  });
+
+  // Zoom + pan
+  const zoom = d3.zoom()
+    .scaleExtent([0.3, 3])
+    .on('zoom', (event) => svgG.attr('transform', event.transform));
+  svg.call(zoom);
+
+  svgG = svg.append('g');
+
+  // Layer groups
+  svgG.append('g').attr('class', 'links');
+  svgG.append('g').attr('class', 'nodes');
+  svgG.append('g').attr('class', 'labels');
+
+  simulation = d3.forceSimulation()
+    .force('link',    d3.forceLink().id(d => d.id).distance(120).strength(0.4))
+    .force('charge',  d3.forceManyBody().strength(-280))
+    .force('center',  d3.forceCenter(W / 2, H / 2))
+    .force('collide', d3.forceCollide(NODE_R + 14))
+    .alphaDecay(0.03)
+    .on('tick', ticked);
+}
+
+function ticked() {
+  if (!svgG) return;
+
+  svgG.select('g.links').selectAll('line.link')
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => {
+      const dx = d.target.x - d.source.x;
+      const dy = d.target.y - d.source.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      return d.target.x - (dx / dist) * (NODE_R + 4);
+    })
+    .attr('y2', d => {
+      const dx = d.target.x - d.source.x;
+      const dy = d.target.y - d.source.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      return d.target.y - (dy / dist) * (NODE_R + 4);
+    });
+
+  svgG.select('g.nodes').selectAll('g.node-group')
+    .attr('transform', d => `translate(${d.x},${d.y})`);
+
+  // Cache positions
+  simulation.nodes().forEach(n => {
+    nodeMap.set(n.id, { x: n.x, y: n.y });
+  });
+}
+
+function drag(sim) {
+  return d3.drag()
+    .on('start', (event, d) => {
+      if (!event.active) sim.alphaTarget(0.2).restart();
+      d.fx = d.x; d.fy = d.y;
+    })
+    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+    .on('end', (event, d) => {
+      if (!event.active) sim.alphaTarget(0);
+      // Keep pinned position in nodeMap; unpin physics
+      nodeMap.set(d.id, { x: d.fx, y: d.fy });
+      d.fx = null; d.fy = null;
+    });
+}
+
+function showTooltip(event, html) {
+  const tip = document.getElementById('graph-tooltip');
+  tip.innerHTML = html;
+  tip.style.opacity = '1';
+  positionTooltip(event);
+}
+function hideTooltip() {
+  document.getElementById('graph-tooltip').style.opacity = '0';
+}
+function positionTooltip(event) {
+  const tip = document.getElementById('graph-tooltip');
+  const box = document.getElementById('graph-container').getBoundingClientRect();
+  let x = event.clientX - box.left + 14;
+  let y = event.clientY - box.top  - 10;
+  if (x + 230 > box.width)  x = event.clientX - box.left - 230;
+  if (y + 80  > box.height) y = event.clientY - box.top  - 80;
+  tip.style.left = x + 'px';
+  tip.style.top  = y + 'px';
+}
+
+function updateGraph(agentList, commLog) {
+  if (!simulation) initGraph();
+
+  const { nodes, links } = buildGraphData(agentList, commLog);
+
+  // Restore cached positions
+  nodes.forEach(n => {
+    if (nodeMap.has(n.id)) {
+      n.x = nodeMap.get(n.id).x;
+      n.y = nodeMap.get(n.id).y;
+    }
+  });
+
+  const newIds = nodes.map(n => n.id).sort().join(',');
+  const topologyChanged = newIds !== prevNodeIds;
+  prevNodeIds = newIds;
+
+  document.getElementById('comm-count').textContent =
+    `${nodes.length} węzłów / ${links.length} połączeń`;
+
+  // ── Links ──────────────────────────────────────────────────────────────────
+  const linkG = svgG.select('g.links');
+  const linkJoin = linkG.selectAll('line.link').data(links, d => `${d.source.id||d.source}||${d.target.id||d.target}`);
+
+  linkJoin.exit().remove();
+
+  const linkEnter = linkJoin.enter().append('line')
+    .attr('class', 'link')
+    .attr('opacity', 0.55)
+    .attr('stroke-linecap', 'round')
+    .on('mouseover', (event, d) => {
+      showTooltip(event,
+        `<b>${d.source.id||d.source} → ${d.target.id||d.target}</b>\n` +
+        `Wiadomości: ${d.count}\n` +
+        (d.types ? `Typy: ${d.types}\n` : '') +
+        (d.lastMsg ? `Ostatnia: ${d.lastMsg}` : '')
+      );
+    })
+    .on('mousemove', positionTooltip)
+    .on('mouseout', hideTooltip);
+
+  const linkMerge = linkJoin.merge(linkEnter);
+  linkMerge
+    .attr('stroke', d => {
+      const tgt = nodes.find(n => n.id === (d.target.id||d.target));
+      return tgt ? nodeColor(tgt.type) : '#6b7280';
+    })
+    .attr('stroke-width', d => Math.min(1.5 + d.count * 0.8, 8))
+    .attr('stroke-dasharray', d => d.count === 0 ? '4,3' : null)
+    .attr('marker-end', d => {
+      const tgt = nodes.find(n => n.id === (d.target.id||d.target));
+      const c = (tgt ? nodeColor(tgt.type) : '#6b7280').replace('#','');
+      return `url(#arrow-${c})`;
+    });
+
+  // ── Nodes ──────────────────────────────────────────────────────────────────
+  const nodeG = svgG.select('g.nodes');
+  const nodeJoin = nodeG.selectAll('g.node-group').data(nodes, d => d.id);
+
+  nodeJoin.exit().remove();
+
+  const nodeEnter = nodeJoin.enter().append('g')
+    .attr('class', 'node-group')
+    .style('cursor', 'pointer')
+    .call(drag(simulation))
+    .on('mouseover', (event, d) => {
+      showTooltip(event,
+        `<b>${d.name}</b> [${d.type}]\n` +
+        `Status: ${d.status}\n` +
+        (d.task ? `Zadanie: ${d.task}` : 'Zadanie: —')
+      );
+    })
+    .on('mousemove', positionTooltip)
+    .on('mouseout', hideTooltip);
+
+  // Pulse ring (only shown when working)
+  nodeEnter.append('circle')
+    .attr('class', 'pulse-ring')
+    .attr('r', NODE_R);
+
+  // Main circle
+  nodeEnter.append('circle')
+    .attr('class', 'main-circle')
+    .attr('r', NODE_R);
+
+  const nodeMerge = nodeJoin.merge(nodeEnter);
+
+  // Update colors + style
+  nodeMerge.select('circle.main-circle')
+    .attr('fill', d => nodeColor(d.type) + '33')   // translucent fill
+    .attr('stroke', d => nodeColor(d.type))
+    .attr('stroke-width', d => d.status === 'idle' ? 1.5 : 2.5)
+    .attr('stroke-dasharray', d => d.status === 'idle' || d.status === 'unknown' ? '5,3' : null);
+
+  nodeMerge.select('circle.pulse-ring')
+    .attr('fill', 'none')
+    .attr('stroke', d => nodeColor(d.type))
+    .attr('stroke-width', 2)
+    .attr('opacity', d => d.status === 'working' || d.status === 'active' ? 0.9 : 0)
+    .attr('class', d =>
+      d.status === 'working' || d.status === 'active'
+        ? 'pulse-ring node-pulse-ring'
+        : 'pulse-ring'
+    );
+
+  // ── Labels ──────────────────────────────────────────────────────────────────
+  const labelG = svgG.select('g.labels');
+  const labelJoin = labelG.selectAll('text.node-label').data(nodes, d => d.id);
+  labelJoin.exit().remove();
+
+  const labelEnter = labelJoin.enter().append('text')
+    .attr('class', 'node-label')
+    .attr('text-anchor', 'middle')
+    .attr('dominant-baseline', 'middle')
+    .attr('font-size', '10')
+    .attr('font-family', 'Segoe UI, system-ui, sans-serif')
+    .attr('pointer-events', 'none');
+
+  labelJoin.merge(labelEnter)
+    .attr('fill', d => nodeColor(d.type))
+    .text(d => d.name.length > 9 ? d.name.slice(0, 8) + '…' : d.name);
+
+  // Keep labels synced to node positions via ticked()
+  // (labels need their own g so we re-bind them each tick)
+  simulation.on('tick.labels', () => {
+    labelG.selectAll('text.node-label')
+      .attr('x', d => d.x)
+      .attr('y', d => d.y);
+  });
+
+  // ── Update simulation ──────────────────────────────────────────────────────
+  simulation.nodes(nodes);
+  simulation.force('link').links(links);
+
+  if (topologyChanged) {
+    simulation.alpha(0.4).restart();
+  } else {
+    // Just reheat lightly so moving nodes settle
+    if (simulation.alpha() < 0.05) simulation.alpha(0.05).restart();
+  }
+}
+
+// Initial placeholder render (before first WS message)
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if (!simulation) {
+      initGraph();
+      updateGraph([], []);
+    }
+  }, 200);
+});
 </script>
 </body>
 </html>
