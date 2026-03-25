@@ -15,7 +15,9 @@
       "Bash(ollama list:*)",
       "Bash(claude --version)",
       "Bash(npx ruflo@latest doctor)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Read(//c/Users/bleki/Desktop/ccode//**)",
+      "Read(//c/Users/bleki/Desktop/ccode/**)"
     ]
   }
 }
